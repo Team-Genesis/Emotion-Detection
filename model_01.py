@@ -10,6 +10,8 @@ Created on Wed Jan 15 22:17:58 2020
 
 
 import os
+import os.path
+from os import path
 import numpy as np
 import pandas as pd
 import seaborn as sns
@@ -299,7 +301,7 @@ def face_det_crop_resize(img_path):
     
     for (x,y,w,h) in faces:
         face_clip = img[y:y+h, x:x+w]  #cropping the face in image
-        cv2.imwrite(img_path, cv2.resize(face_clip, (350, 350)))  #resizing image then saving it
+        cv2.imwrite(img_path, cv2.resize(face_clip, (224, 224)))  #resizing image then saving it
 
 
 for i, d in df_human_train.iterrows():
@@ -575,7 +577,7 @@ def change_image(df):
     for i, d in df.iterrows():
         img = cv2.imread(os.path.join(d["folderName"], d["imageName"]))
         face_clip = img[40:240, 35:225]         #cropping the face in image
-        face_resized = cv2.resize(face_clip, (350, 350))
+        face_resized = cv2.resize(face_clip, (224, 224))
         cv2.imwrite(os.path.join(d["folderName"], d["imageName"]), face_resized) #resizing and saving the image
         count += 1
     print("Total number of images cropped and resized = {}".format(count))
@@ -586,26 +588,250 @@ change_image(df_scraped_test)
  
     
     
+#Combining train data of both Human and Scraped dataset
+
+frames = [df_human_train, df_scraped_train]
+combined_train = pd.concat(frames)
+combined_train.shape    
+
+combined_train = combined_train.sample(frac = 1.0)  #shuffling the dataframe
+combined_train.reset_index(inplace = True, drop = True)
+combined_train.to_pickle("data/dataframes/combined_train.pkl")
+
+
+#Creating bottleneck features from VGG-16 model. Here, we are using Transfer learning
+
+train_combined = pd.read_pickle("data/dataframes/combined_train.pkl")
+CV_humans = pd.read_pickle("data/dataframes/human/df_human_cv.pkl")
+CV_scraped = pd.read_pickle("data/dataframes/scraper/df_scraped_cv.pkl")
+test_humans = pd.read_pickle("data/dataframes/human/df_human_test.pkl")
+test_scraped = pd.read_pickle("data/dataframes/scraper/df_scraped_test.pkl")
+
+
+trainCombined_batch_pointer = 0
+CVHumans_batch_pointer = 0
+CVscraped_batch_pointer = 0
+testHumans_batch_pointer = 0
+testScraped_batch_pointer = 0
+
+
+
+# Bottleneck features for CV Human
     
+CVhumans_labels = pd.get_dummies(CV_humans["Labels"]).as_matrix()
+CVhumans_labels.shape
+
+def loadCVHumanBatch(batch_size):
+    global CVHumans_batch_pointer
+    batch_images = []
+    batch_labels = []
+    for i in range(batch_size):
+        path1 = CV_humans.iloc[CVHumans_batch_pointer + i]["folderName"]
+        path2 = CV_humans.iloc[CVHumans_batch_pointer + i]["imageName"]
+        #print ("file exist:"+str(path.exists(os.path.join(path1, path2))))
+        read_image = cv2.imread(os.path.join(path1, path2))
+       
+        read_image_final = read_image/255.0  #here, we are normalizing the images
+        print("i : ", i)
+        print("Rows : ", len(read_image_final))
+        print("Columns : ",len(read_image_final[0]))
+        batch_images.append(read_image_final)
+        
+        batch_labels.append(CVhumans_labels[CVHumans_batch_pointer + i]) #appending corresponding labels
+        
+    CVHumans_batch_pointer += batch_size
+        
+    return np.array(batch_images), np.array(batch_labels)
+
+#creating bottleneck features for CV Human data using VGG-16- Image-net model
+model = VGG16(weights='imagenet', include_top=False)
+SAVEDIR = "data/Bottleneck_Features/Bottleneck_CVHumans/"
+SAVEDIR_LABELS = "data/Bottleneck_Features/CVHumans_Labels/"
+batch_size = 10
+for i in range(int(len(CV_humans)/batch_size)):
+    x, y = loadCVHumanBatch(batch_size)
+    print("Batch {} loaded".format(i+1))
     
+    np.save(os.path.join(SAVEDIR_LABELS, "bottleneck_labels_{}".format(i+1)), y)
     
+    print("Creating bottleneck features for batch {}". format(i+1))
+    bottleneck_features = model.predict(x)
+    np.save(os.path.join(SAVEDIR, "bottleneck_{}".format(i+1)), bottleneck_features)
+    print("Bottleneck features for batch {} created and saved\n".format(i+1))
+    print("Bottleneck features left: ", int(len(CV_humans)/batch_size) - i)
+
+#Bottleneck features for CV Scraped
     
+
+CVScraped_Labels = pd.get_dummies(CV_scraped["Labels"]).as_matrix()
+CVScraped_Labels.shape
     
+ 
+def loadCVScrapedBatch(batch_size):
+    global CVscraped_batch_pointer
+    batch_images = []
+    batch_labels = []
+    for i in range(batch_size):
+        path1 = CV_scraped.iloc[CVscraped_batch_pointer + i]["folderName"]
+        path2 = CV_scraped.iloc[CVscraped_batch_pointer + i]["imageName"]
+        read_image = cv2.imread(os.path.join(path1, path2))
+        read_image_final = read_image/255.0  #here, we are normalizing the images
+        batch_images.append(read_image_final)
+        
+        batch_labels.append(CVScraped_Labels[CVscraped_batch_pointer + i]) #appending corresponding labels
+        
+    CVscraped_batch_pointer += batch_size
+        
+    return np.array(batch_images), np.array(batch_labels)   
+
+
+#creating bottleneck features for CV Animated data using VGG-16- Image-net model
+model = VGG16(weights='imagenet', include_top=False)
+SAVEDIR = "data/Bottleneck_Features/Bottleneck_CVScraped/"
+SAVEDIR_LABELS = "data/Bottleneck_Features/CVScraped_Labels/"
+batch_size = 10
+for i in range(int(len(CV_scraped)/batch_size)):
+    x, y = loadCVScrapedBatch(batch_size)
+    print("Batch {} loaded".format(i+1))
     
+    np.save(os.path.join(SAVEDIR_LABELS, "bottleneck_labels_{}".format(i+1)), y)
     
+    print("Creating bottleneck features for batch {}". format(i+1))
+    bottleneck_features = model.predict(x)
+    np.save(os.path.join(SAVEDIR, "bottleneck_{}".format(i+1)), bottleneck_features)
+    print("Bottleneck features for batch {} created and saved\n".format(i+1))
+    print("Bottleneck features left: ", int(len(CV_scraped)/batch_size) - i)
     
+#Bottleneck Features for Test Human Data
     
+TestHuman_Labels = pd.get_dummies(test_humans["Labels"]).as_matrix()
+TestHuman_Labels.shape
+
+def loadTestHumansBatch(batch_size):
+    global testHumans_batch_pointer
+    batch_images = []
+    batch_labels = []
+    for i in range(batch_size):
+        path1 = test_humans.iloc[testHumans_batch_pointer + i]["folderName"]
+        path2 = test_humans.iloc[testHumans_batch_pointer + i]["imageName"]
+        read_image = cv2.imread(os.path.join(path1, path2))
+        read_image_final = read_image/255.0  #here, we are normalizing the images
+        print("i : ", i)
+        print("Rows : ", len(read_image_final))
+        print("Columns : ",len(read_image_final[0]))
+        print("Path : ", os.path.join(path1, path2))
+        batch_images.append(read_image_final)
+        
+        batch_labels.append(TestHuman_Labels[testHumans_batch_pointer + i]) #appending corresponding labels
+        
+    testHumans_batch_pointer += batch_size
+        
+    return np.array(batch_images), np.array(batch_labels)
+
+#creating bottleneck features for Test Humans data using VGG-16- Image-net model
+model = VGG16(weights='imagenet', include_top=False)
+SAVEDIR = "data/Bottleneck_Features/Bottleneck_TestHumans/"
+SAVEDIR_LABELS = "data/Bottleneck_Features/TestHumans_Labels/"
+batch_size = 10
+for i in range(int(len(test_humans)/batch_size)):
+    x, y = loadTestHumansBatch(batch_size)
+    print("Batch {} loaded".format(i+1))
     
+    np.save(os.path.join(SAVEDIR_LABELS, "bottleneck_labels_{}".format(i+1)), y)
     
+    print("Creating bottleneck features for batch {}". format(i+1))
+    bottleneck_features = model.predict(x)
+    np.save(os.path.join(SAVEDIR, "bottleneck_{}".format(i+1)), bottleneck_features)
+    print("Bottleneck features for batch {} created and saved\n".format(i+1))
+    print("Bottleneck features left: ", int(len(test_humans)/batch_size) - i)
+
+leftover_points = len(test_humans) - testHumans_batch_pointer
+x, y = loadTestHumansBatch(leftover_points)
+np.save(os.path.join(SAVEDIR_LABELS, "bottleneck_labels_{}".format(int(len(test_humans)/batch_size) + 1)), y)
+bottleneck_features = model.predict(x)
+np.save(os.path.join(SAVEDIR, "bottleneck_{}".format(int(len(test_humans)/batch_size) + 1)), bottleneck_features)
+
+#Bottleneck Features for Test Animated Data
+
+TestScraped_Labels = pd.get_dummies(test_scraped["Labels"]).as_matrix()
+TestScraped_Labels.shape
+
+def loadTestScrapedBatch(batch_size):
+    global TestScraped_batch_pointer
+    batch_images = []
+    batch_labels = []
+    for i in range(batch_size):
+        path1 = test_scraped.iloc[TestScraped_batch_pointer + i]["folderName"]
+        path2 = test_scraped.iloc[TestScraped_batch_pointer + i]["imageName"]
+        read_image = cv2.imread(os.path.join(path1, path2))
+        read_image_final = read_image/255.0  #here, we are normalizing the images
+        batch_images.append(read_image_final)
+        
+        batch_labels.append(TestScraped_Labels[TestScraped_batch_pointer + i]) #appending corresponding labels
+        
+    TestScraped_batch_pointer += batch_size
+        
+    return np.array(batch_images), np.array(batch_labels)
+
+
+#creating bottleneck features for Test Scraped data using VGG-16- Image-net model
+model = VGG16(weights='imagenet', include_top=False)
+SAVEDIR = "data/Bottleneck_Features/Bottleneck_TestScraped/"
+SAVEDIR_LABELS = "data/Bottleneck_Features/TestScraped_Labels/"
+batch_size = 10
+for i in range(int(len(test_scraped)/batch_size)):
+    x, y = loadTestScrapedBatch(batch_size)
+    print("Batch {} loaded".format(i+1))
     
+    np.save(os.path.join(SAVEDIR_LABELS, "bottleneck_labels_{}".format(i+1)), y)
     
+    print("Creating bottleneck features for batch {}". format(i+1))
+    bottleneck_features = model.predict(x)
+    np.save(os.path.join(SAVEDIR, "bottleneck_{}".format(i+1)), bottleneck_features)
+    print("Bottleneck features for batch {} created and saved\n".format(i+1))
+    print("Bottleneck features left: ", int(len(test_scraped)/batch_size) - i)
+
+
+
+ # Bottleneck features for CombinedTrain Data
+
+trainCombined_labels = pd.get_dummies(train_combined["Labels"]).as_matrix()
+trainCombined_labels.shape   
     
+def loadCombinedTrainBatch(batch_size):
+    global trainCombined_batch_pointer
+    batch_images = []
+    batch_labels = []
+    for i in range(batch_size):
+        path1 = train_combined.iloc[trainCombined_batch_pointer + i]["folderName"]
+        path2 = train_combined.iloc[trainCombined_batch_pointer + i]["imageName"]
+        read_image = cv2.imread(os.path.join(path1, path2))
+        read_image_final = read_image/255.0  #here, we are normalizing the images
+        batch_images.append(read_image_final)
+        
+        batch_labels.append(trainCombined_labels[trainCombined_batch_pointer + i]) #appending corresponding labels
+        
+    trainCombined_batch_pointer += batch_size
+        
+    return np.array(batch_images), np.array(batch_labels)
+
+
+#creating bottleneck features for train data using VGG-16- Image-net model
+model = VGG16(weights='imagenet', include_top=False)
+SAVEDIR = "data/Bottleneck_Features/Bottleneck_CombinedTrain/"
+SAVEDIR_LABELS = "data/Bottleneck_Features/CombinedTrain_Labels/"
+batch_size = 10
+for i in range(int(len(train_combined)/batch_size)):
+    x, y = loadCombinedTrainBatch(batch_size)
+    print("Batch {} loaded".format(i+1))
     
+    np.save(os.path.join(SAVEDIR_LABELS, "bottleneck_labels_{}".format(i+1)), y)
     
-    
-    
-    
-    
+    print("Creating bottleneck features for batch {}". format(i+1))
+    bottleneck_features = model.predict(x)
+    np.save(os.path.join(SAVEDIR, "bottleneck_{}".format(i+1)), bottleneck_features)
+    print("Bottleneck features for batch {} created and saved\n".format(i+1))
+    print("Bottleneck features left: ", int(len(train_combined)/batch_size) - i)   
     
     
     
