@@ -2,3 +2,5 @@
 /data/CK
 *.pdf
 /data
+*.json
+*.h5
