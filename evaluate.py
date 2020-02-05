@@ -32,6 +32,13 @@ def predict_save(test_img, save_path, suffix):
     
         emotions = ('angry', 'disgust', 'fear', 'happy', 'sad', 'surprise', 'neutral')
         predicted_emotion = emotions[max_index]
+        
+        if predicted_emotion == 'angry' or 'disgust' or 'fear' or 'sad' :
+            predicted_emotion = 'not interested'
+        elif predicted_emotion == 'happy' or 'surprise':
+            predicted_emotion = 'interested'
+        else:
+            predicted_emotion = 'neutral'
     
         cv2.putText(test_img, predicted_emotion, (int(x), int(y)), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,255), 2)
         
@@ -77,7 +84,17 @@ for i in range(0, 5):
         
         test_img = cv2.imread(files[i][j], 0)
         
+        if emotion == 'happy' :
+            emotion = 'interested'
+        elif emotion == 'neutral':
+            emotion = 'neutral'
+        else :
+            emotion = 'not interested'
+        
         img_emotion = predict_save(test_img, path, str(i) + '_' + str(j))
+        
+        print("Emotion:", emotion)
+        print("Predicted Emotion:", img_emotion )
         
         if img_emotion == emotion:
             accuracy[i] = accuracy[i] + 1
