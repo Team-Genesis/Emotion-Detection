@@ -1,0 +1,12 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Fri Jan 31 00:34:25 2020
+
+@author: ishant
+
+ACCURACY PERCENTAGES
+"""
+
+result 1 = [45.68599717114569, 1.8072289156626504, 0.0, 26.47058823529412, 2.6] ====> 200 Epochs
+result 2 = [34.51202263083451, 5.421686746987952, 0.0, 52.94117647058824, 5.2] ====> 30 Epochs
